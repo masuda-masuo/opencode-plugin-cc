@@ -326,11 +326,13 @@ async function runPrompt({ cwd, kind, title, promptText, agent, model, session, 
                 });
               }
             }
-          } else if (type.includes("tool")) {
-            const tool = event?.properties?.part?.tool;
-            if (tool) job.stats.lastTool = tool;
-          } else if (type.includes("step")) {
-            job.stats.steps += 1;
+          } else if (type === "message.part.updated") {
+            const part = event?.properties?.part;
+            if (part?.type === "tool" && part?.tool) {
+              job.stats.lastTool = part.tool;
+            } else if (part?.type === "step-start") {
+              job.stats.steps += 1;
+            }
           } else if (type === "session.idle") {
             sawIdle = true;
           } else if (type === "session.error") {
