@@ -1,0 +1,13 @@
+opencode-plugin-cc
+
+This project includes material adapted from openai/codex-plugin-cc
+(https://github.com/openai/codex-plugin-cc), Copyright 2026 OpenAI,
+licensed under the Apache License, Version 2.0:
+
+- plugins/opencode/prompts/adversarial-review.md (adapted)
+- plugins/opencode/schemas/review-output.schema.json (copied)
+- The slash-command / companion-script architecture is modeled on that plugin.
+
+You may obtain a copy of the Apache License, Version 2.0 at
+
+    http://www.apache.org/licenses/LICENSE-2.0
