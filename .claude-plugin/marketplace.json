@@ -1,0 +1,21 @@
+{
+  "name": "opencode-plugin-cc",
+  "owner": {
+    "name": "masuda-masuo"
+  },
+  "metadata": {
+    "description": "opencode plugin for Claude Code: delegation and adversarial code review over a local opencode server.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "opencode",
+      "description": "Use opencode from Claude Code to review code or delegate tasks, without flooding Claude's context.",
+      "version": "0.1.0",
+      "author": {
+        "name": "masuda-masuo"
+      },
+      "source": "./plugins/opencode"
+    }
+  ]
+}
