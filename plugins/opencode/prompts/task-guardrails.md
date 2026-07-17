@@ -18,6 +18,10 @@ Version control:
 Research:
 - For cross-cutting research (similar patterns elsewhere, duplicate issues, issue-to-PR history), the shiori MCP tools are available when configured; prefer them over exhaustive grep sweeps. For code the task points at directly, plain file reads are fine.
 
+Self-review before returning:
+- For every behavior you changed, confirm a test exercises it — ideally one that would FAIL without your change. If you changed behavior without adding or updating such a test, either add it now or state plainly in "Not done" why none was added. A green suite that never touches your change is not coverage.
+- After the tests are in place, run verify_in_container (or the project's verify tool) with a scope no narrower than the modified package or directory. Report the exact command, scope, and result. Skip this only if the task is explicitly read-only; if no suite covers the changed code, say so in "Checks run" rather than omitting it.
+
 Report format — end your final message with exactly these three sections:
 1. What changed: each file, with the essence of before/after (or "nothing" for read-only tasks).
 2. Checks run: exact commands, their true scope, and results.
