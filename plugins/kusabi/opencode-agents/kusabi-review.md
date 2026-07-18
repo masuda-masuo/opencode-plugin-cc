@@ -1,4 +1,5 @@
 ---
+name: kusabi-review
 description: フェーズチェーン「review」ワーカー。PR の敵対的レビューをイシューコメント成果物として返す。
 mode: primary
 permission:

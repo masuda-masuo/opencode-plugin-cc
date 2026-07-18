@@ -32,17 +32,17 @@ Argument handling:
 
 Foreground flow:
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/opencode-companion.mjs" review "$ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/kusabi-companion.mjs" review "$ARGUMENTS"
 ```
 - Return the command stdout verbatim, exactly as-is. Do not paraphrase, summarize, or fix anything it reports.
 
 Background flow:
 ```typescript
 Bash({
-  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/opencode-companion.mjs" review "$ARGUMENTS"`,
+  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/kusabi-companion.mjs" review "$ARGUMENTS"`,
   description: "opencode review",
   run_in_background: true
 })
 ```
 - Do not poll or wait for completion in this turn.
-- After launching, tell the user: "opencode review started in the background. Check `/opencode:status` for progress."
+- After launching, tell the user: "opencode review started in the background. Check `/kusabi:status` for progress."

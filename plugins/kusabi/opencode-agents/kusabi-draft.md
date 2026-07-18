@@ -1,4 +1,5 @@
 ---
+name: kusabi-draft
 description: フェーズチェーン「起票」ワーカー。重複チェック + 新規イシュー作成。
 mode: primary
 permission:
