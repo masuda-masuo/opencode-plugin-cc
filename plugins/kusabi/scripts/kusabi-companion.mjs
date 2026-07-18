@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// opencode-companion: bridge between Claude Code slash commands and an
+// kusabi-companion: bridge between Claude Code slash commands and an
 // on-demand `opencode serve` instance.
 //
 // Context firewall: every opencode event is persisted under the state dir;
@@ -25,20 +25,28 @@ const REVIEW_DIFF_LIMIT = 200_000;
 const WRITE_TOOL_NAMES = ["bash", "edit", "write", "patch", "task"];
 
 const PHASE_AGENTS = {
-  draft: "oc-draft",
-  investigate: "oc-investigate",
-  implement: "oc-implement",
-  review: "oc-review",
-  respond: "oc-respond",
-  salvage: "oc-salvage",
+  draft: "kusabi-draft",
+  investigate: "kusabi-investigate",
+  implement: "kusabi-implement",
+  review: "kusabi-review",
+  respond: "kusabi-respond",
+  salvage: "kusabi-salvage",
 };
 
 // ---------------------------------------------------------------------------
 // state dir / server lifecycle
 // ---------------------------------------------------------------------------
 
-function stateRoot() {
-  return process.env.OPENCODE_COMPANION_STATE_DIR || path.join(os.homedir(), ".opencode-plugin-cc");
+export function stateRoot() {
+  const envDir = process.env.KUSABI_STATE_DIR || process.env.OPENCODE_COMPANION_STATE_DIR;
+  if (envDir) return envDir;
+  const newDir = path.join(os.homedir(), ".kusabi");
+  const oldDir = path.join(os.homedir(), ".opencode-plugin-cc");
+  // One-time migration: rename old state dir to new name if only the old exists.
+  if (!fs.existsSync(newDir) && fs.existsSync(oldDir)) {
+    try { fs.renameSync(oldDir, newDir); } catch { /* best-effort */ }
+  }
+  return newDir;
 }
 
 function stateDirFor(cwd) {
@@ -659,7 +667,7 @@ async function cmdTask(cwd, { flags, text }) {
     watchdogS: Number(flags.watchdog ?? DEFAULT_WATCHDOG_S),
   });
   if (job.status !== "completed") {
-    return `${renderHeader(job)}${job.error ?? ""}\nCheck /opencode:status ${job.id} for details.`;
+    return `${renderHeader(job)}${job.error ?? ""}\nCheck /kusabi:status ${job.id} for details.`;
   }
   return `${renderHeader(job)}${resultText || "(empty result)"}`;
 }
@@ -689,7 +697,7 @@ async function cmdReview(cwd, { flags, text }) {
     watchdogS: Number(flags.watchdog ?? DEFAULT_WATCHDOG_S),
   });
   if (job.status !== "completed") {
-    return `${renderHeader(job)}${job.error ?? ""}\nCheck /opencode:status ${job.id} for details.`;
+    return `${renderHeader(job)}${job.error ?? ""}\nCheck /kusabi:status ${job.id} for details.`;
   }
   // Strip trailing VERDICT token line before JSON parsing so the token
   // does not make extractJson fail on well-formed JSON.
@@ -763,9 +771,20 @@ function cmdInstallAgents() {
   const src = path.join(PLUGIN_ROOT, "opencode-agents");
   const dest = process.env.OPENCODE_AGENT_DIR || path.join(os.homedir(), ".config", "opencode", "agent");
   fs.mkdirSync(dest, { recursive: true });
+  // Remove stale legacy agent definitions from install target
+  const stale = ["oc-draft.md", "oc-investigate.md", "oc-implement.md", "oc-review.md", "oc-respond.md", "oc-salvage.md"];
+  let removed = 0;
+  for (const f of stale) {
+    const target = path.join(dest, f);
+    if (fs.existsSync(target)) {
+      fs.unlinkSync(target);
+      removed += 1;
+    }
+  }
+  // Install current agent definitions under new kusabi-* names
   const files = fs.existsSync(src) ? fs.readdirSync(src).filter((f) => f.endsWith(".md")) : [];
   for (const f of files) fs.copyFileSync(path.join(src, f), path.join(dest, f));
-  return `installed ${files.length} phase agents to ${dest}`;
+  return `installed ${files.length} phase agents to ${dest} (removed ${removed} stale legacy names)`;
 }
 
 async function cmdSalvage(cwd, { flags, text }) {
@@ -803,7 +822,7 @@ async function cmdSalvage(cwd, { flags, text }) {
     kind: "salvage",
     title: `salvage: ${deadJobId}`,
     promptText,
-    agent: "oc-salvage",
+    agent: "kusabi-salvage",
     phase: "salvage",
     model: parseModel(flags.model),
     tools: Object.fromEntries(
@@ -829,7 +848,7 @@ async function cmdSalvage(cwd, { flags, text }) {
 
 function usage() {
   return [
-    "Usage: opencode-companion <subcommand> [flags] [text]",
+    "Usage: kusabi-companion <subcommand> [flags] [text]",
     "",
     "Subcommands:",
     "  setup      Start or verify the opencode server for this directory",
@@ -905,7 +924,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       process.exit(0);
     })
     .catch((err) => {
-      process.stdout.write(`opencode-companion error: ${err.message}\n`);
+      process.stdout.write(`kusabi-companion error: ${err.message}\n`);
       process.exit(1);
     });
 }

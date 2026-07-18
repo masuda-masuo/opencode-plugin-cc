@@ -1,6 +1,6 @@
 ---
-name: oc-result-handling
-description: opencode ワーカー(companion)出力を Claude Code 側で扱うときの内部規律
+name: kusabi-result-handling
+description: kusabi ワーカー(companion)出力を Claude Code 側で扱うときの内部規律
 user-invocable: false
 ---
 
@@ -25,8 +25,8 @@ user-invocable: false
 
 - ワーカーのジョブが失敗・不完全だった場合、Claude 側の実装で代替しない。失敗として報告して止まる
 - salvage 結果も同様: 検分結果を報告するのが仕事であり、Claude が続きを実装することではない
-- companion が setup/認証エラーを返したら `/opencode:setup` を案内する。別の認証経路を即興しない
+- companion が setup/認証エラーを返したら `/kusabi:setup` を案内する。別の認証経路を即興しない
 
 ## 報告の裏取り(verifier 規範との接続)
 
-- ワーカーの完了報告は主張であって証拠ではない。採用判断の前に diff・実挙動で裏取る(詳細な規範は adversarial-review.md / oc-review.md 側にある。ここでは「裏取ってから信じる」ことだけ覚える)
+- ワーカーの完了報告は主張であって証拠ではない。採用判断の前に diff・実挙動で裏取る(詳細な規範は adversarial-review.md / kusabi-review.md 側にある。ここでは「裏取ってから信じる」ことだけ覚える)

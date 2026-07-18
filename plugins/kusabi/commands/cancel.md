@@ -12,7 +12,7 @@ Raw slash-command arguments:
 
 Run:
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/opencode-companion.mjs" cancel "$ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/kusabi-companion.mjs" cancel "$ARGUMENTS"
 ```
 
 Return the command stdout verbatim, exactly as-is.

@@ -1,0 +1,8 @@
+{
+  "name": "kusabi",
+  "version": "0.1.0",
+  "description": "kusabi plugin for Claude Code: delegation and adversarial code review over a local opencode server.",
+  "author": {
+    "name": "masuda-masuo"
+  }
+}

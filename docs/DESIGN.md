@@ -1,4 +1,4 @@
-# opencode-plugin-cc 設計書
+# kusabi 設計書
 
 最終更新: 2026-07-16
 ステータス: フェーズチェーンまで設計確定、実地検証済み(shiori#210 → shiori PR #274 を本設計のチェーンで出荷)
@@ -16,8 +16,8 @@ Claude Code がオーケストレーター(計画・検収・publish 判断)、o
 
 ```
 Claude Code (オーケストレーター)
-  └─ /opencode:task 等のコマンド → 転送専用サブエージェント (agents/opencode-worker.md)
-       └─ scripts/opencode-companion.mjs (防波堤)
+  └─ /kusabi:task 等のコマンド → 転送専用サブエージェント (agents/opencode-worker.md)
+       └─ scripts/kusabi-companion.mjs (防波堤)
             └─ opencode serve (HTTP API, 127.0.0.1 + OPENCODE_SERVER_PASSWORD, on-demand 起動)
                  └─ deepseek ワーカー
                       └─ MCP: sunaba / shiori (opencode 側の opencode.json に設定)
@@ -27,7 +27,7 @@ Claude Code (オーケストレーター)
 ### 採用した案と棄却した案
 
 - **HTTP サーバー案を採用**。`opencode run` 直叩きは不採用 — 中間テキストが全ターン stdout に、ツールログが stderr に流れ、Claude のコンテキストを汚染するため。
-- **companion スクリプトが防波堤**: SSE `/event` 購読、permission.asked への自動応答、イベントは state dir(`~/.opencode-plugin-cc/<hash(cwd)>/jobs/`)に保存、stdout には整形済み最終結果のみ。
+- **companion スクリプトが防波堤**: SSE `/event` 購読、permission.asked への自動応答、イベントは state dir(`~/.kusabi/<hash(cwd)>/jobs/`)に保存、stdout には整形済み最終結果のみ。
 - **転送専用サブエージェント**: オーケストレーターの認知負荷削減が最優先要件。コマンドの仕事は companion の実行と stdout の verbatim 転送のみ。
 - opencode API は v1 面(`/session/...`, `/event`, `/permission/:id/reply`)を使用。v1→v2 移行中のため SDK を使う場合は pin する。
 
@@ -68,7 +68,7 @@ Claude Code (オーケストレーター)
 
 フェーズは opencode.json の agent 定義として実装する。deny リスト+モデル既定+システムプロンプトを agent に束ね、companion の `--phase <name>` は `--agent` への写像にする。
 
-注意(1.17.x 実測→1.18.3 で改善): セッション `tools` 設定も agent の permission も**実行時 deny ルールに変換される**。1.17.x ではモデルに送られるツール一覧から除外されていなかったが、**1.18.3 の `resolveTools` 修正により全面 `deny` は物理除外される**(issue #3 2026-07-17 実機A/B確認)。つまり `--deny` は実行ガードであると同時にコンテキスト削減にもなる。oc-salvage.md の deny 構成案はコンテキスト汚染の削減も同時に達成する。
+注意(1.17.x 実測→1.18.3 で改善): セッション `tools` 設定も agent の permission も**実行時 deny ルールに変換される**。1.17.x ではモデルに送られるツール一覧から除外されていなかったが、**1.18.3 の `resolveTools` 修正により全面 `deny` は物理除外される**(issue #3 2026-07-17 実機A/B確認)。つまり `--deny` は実行ガードであると同時にコンテキスト削減にもなる。kusabi-salvage.md の deny 構成案はコンテキスト汚染の削減も同時に達成する。
 
 真のフェーズ別ロードの実現ルートは:
 
