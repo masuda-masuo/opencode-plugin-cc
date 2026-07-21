@@ -280,14 +280,14 @@ describe("stateRoot", () => {
     }
   });
 
-  it("returns ~/.kusabi when no env var is set", () => {
+  it("returns {home}/.kusabi with default os.homedir() when no env var is set", () => {
     const savedKusabi = process.env.KUSABI_STATE_DIR;
     const savedOld = process.env.OPENCODE_COMPANION_STATE_DIR;
     try {
       delete process.env.KUSABI_STATE_DIR;
       delete process.env.OPENCODE_COMPANION_STATE_DIR;
       const result = stateRoot();
-      assert.ok(result.endsWith("/.kusabi"), `expected ~/.kusabi, got ${result}`);
+      assert.equal(result, path.join(os.homedir(), ".kusabi"));
     } finally {
       if (savedKusabi === undefined) delete process.env.KUSABI_STATE_DIR;
       else process.env.KUSABI_STATE_DIR = savedKusabi;
@@ -296,19 +296,37 @@ describe("stateRoot", () => {
     }
   });
 
-  it("migrates old ~/.opencode-plugin-cc to ~/.kusabi when only old dir exists", () => {
+  it("returns {home}/.kusabi with injected home directory", () => {
+    const savedKusabi = process.env.KUSABI_STATE_DIR;
+    const savedOld = process.env.OPENCODE_COMPANION_STATE_DIR;
+    try {
+      delete process.env.KUSABI_STATE_DIR;
+      delete process.env.OPENCODE_COMPANION_STATE_DIR;
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), "kusabi-test-"));
+      try {
+        const result = stateRoot(home);
+        assert.equal(result, path.join(home, ".kusabi"));
+      } finally {
+        fs.rmSync(home, { recursive: true });
+      }
+    } finally {
+      if (savedKusabi === undefined) delete process.env.KUSABI_STATE_DIR;
+      else process.env.KUSABI_STATE_DIR = savedKusabi;
+      if (savedOld === undefined) delete process.env.OPENCODE_COMPANION_STATE_DIR;
+      else process.env.OPENCODE_COMPANION_STATE_DIR = savedOld;
+    }
+  });
+
+  it("migrates old .opencode-plugin-cc to .kusabi when only old dir exists", () => {
     const savedKusabi = process.env.KUSABI_STATE_DIR;
     const savedOld = process.env.OPENCODE_COMPANION_STATE_DIR;
     try {
       delete process.env.KUSABI_STATE_DIR;
       delete process.env.OPENCODE_COMPANION_STATE_DIR;
 
-      const home = os.homedir();
-      const newDir = path.join(home, ".kusabi");
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), "kusabi-test-"));
       const oldDir = path.join(home, ".opencode-plugin-cc");
-
-      // Clean up any leftovers from previous test runs
-      if (fs.existsSync(newDir)) fs.rmSync(newDir, { recursive: true });
+      const newDir = path.join(home, ".kusabi");
 
       // Create old dir with a marker file
       fs.mkdirSync(oldDir, { recursive: true });
@@ -316,16 +334,14 @@ describe("stateRoot", () => {
       fs.writeFileSync(marker, "pre-migration data", "utf8");
 
       try {
-        const result = stateRoot();
+        const result = stateRoot(home);
         assert.equal(result, newDir);
         // Old dir should be gone (renamed to new)
         assert.ok(!fs.existsSync(oldDir), "old dir should not exist after migration");
         // New dir should contain the marker
         assert.ok(fs.existsSync(path.join(newDir, "migration-marker")), "migration marker should exist in new dir");
       } finally {
-        // Cleanup
-        if (fs.existsSync(oldDir)) fs.rmSync(oldDir, { recursive: true });
-        if (fs.existsSync(newDir)) fs.rmSync(newDir, { recursive: true });
+        fs.rmSync(home, { recursive: true });
       }
     } finally {
       if (savedKusabi === undefined) delete process.env.KUSABI_STATE_DIR;
@@ -342,7 +358,7 @@ describe("stateRoot", () => {
       delete process.env.KUSABI_STATE_DIR;
       delete process.env.OPENCODE_COMPANION_STATE_DIR;
 
-      const home = os.homedir();
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), "kusabi-test-"));
       const oldDir = path.join(home, ".opencode-plugin-cc");
 
       // Create old dir
@@ -351,12 +367,12 @@ describe("stateRoot", () => {
       try {
         // Set env override
         process.env.KUSABI_STATE_DIR = "/tmp/kusabi-env-override-test";
-        const result = stateRoot();
+        const result = stateRoot(home);
         assert.equal(result, "/tmp/kusabi-env-override-test");
         // Old dir should still exist (not migrated because env is set)
         assert.ok(fs.existsSync(oldDir), "old dir should still exist when env is set");
       } finally {
-        if (fs.existsSync(oldDir)) fs.rmSync(oldDir, { recursive: true });
+        fs.rmSync(home, { recursive: true });
       }
     } finally {
       if (savedKusabi === undefined) delete process.env.KUSABI_STATE_DIR;
@@ -366,7 +382,6 @@ describe("stateRoot", () => {
     }
   });
 });
-
 
 // ---------------------------------------------------------------------------
 // deriveDisposition — all branches
