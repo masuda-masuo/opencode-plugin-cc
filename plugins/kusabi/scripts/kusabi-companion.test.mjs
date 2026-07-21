@@ -25,8 +25,10 @@ import {
   extractAssistantText,
   resolveExplainPassage,
   parseDeliverables,
+  parseSmoke,
   parseChangedPaths,
   checkDeliverablesProbe,
+  checkSmokeProbe,
   implementDenyTools,
 } from "./kusabi-companion.mjs";
 
@@ -2617,6 +2619,208 @@ describe("checkDeliverablesProbe", () => {
     assert.doesNotThrow(() => checkDeliverablesProbe(undefined, undefined));
     assert.doesNotThrow(() => checkDeliverablesProbe([], null));
     assert.doesNotThrow(() => checkDeliverablesProbe("not-array", "not-array"));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseSmoke — ## Smoke section parsing
+// ---------------------------------------------------------------------------
+
+describe("parseSmoke", () => {
+  it("ignores 'exit N' inside the command backticks (annotation must follow the command)", () => {
+    const text = "## Smoke\n- `bash -c \"exit 1\"`\n";
+    assert.deepEqual(parseSmoke(text), [{ command: 'bash -c "exit 1"', expectedExit: 0 }]);
+  });
+
+  it("annotation after the command wins over 'exit N' inside backticks", () => {
+    const text = "## Smoke\n- `bash -c \"exit 1\"` — exit 1\n";
+    assert.deepEqual(parseSmoke(text), [{ command: 'bash -c "exit 1"', expectedExit: 1 }]);
+  });
+
+  it("returns [] for text without ## Smoke section", () => {
+    assert.deepEqual(parseSmoke("some brief text\n## Other section\ncontent"), []);
+  });
+
+  it("returns [] for empty string", () => {
+    assert.deepEqual(parseSmoke(""), []);
+  });
+
+  it("returns [] for null/undefined", () => {
+    assert.deepEqual(parseSmoke(null), []);
+    assert.deepEqual(parseSmoke(undefined), []);
+  });
+
+  it("parses backtick-quoted command with default exit 0", () => {
+    const text = "## Smoke\n- `node scripts/x.mjs --help`\n";
+    const result = parseSmoke(text);
+    assert.equal(result.length, 1);
+    assert.equal(result[0].command, "node scripts/x.mjs --help");
+    assert.equal(result[0].expectedExit, 0);
+  });
+
+  it("parses backtick command with exit 1 annotation", () => {
+    const text = "## Smoke\n- `grep -q foo bar` exit 1\n";
+    const result = parseSmoke(text);
+    assert.equal(result.length, 1);
+    assert.equal(result[0].command, "grep -q foo bar");
+    assert.equal(result[0].expectedExit, 1);
+  });
+
+  it("parses backtick command with exit annotation after em dash", () => {
+    const text = "## Smoke\n- `node scripts/x.mjs --help` — exit 0\n";
+    const result = parseSmoke(text);
+    assert.equal(result.length, 1);
+    assert.equal(result[0].command, "node scripts/x.mjs --help");
+    assert.equal(result[0].expectedExit, 0);
+  });
+
+  it("ignores bullet lines without backticks", () => {
+    const text = "## Smoke\n- `valid command`\n- just text, no backtick\n- `another valid` exit 2\n";
+    const result = parseSmoke(text);
+    assert.equal(result.length, 2);
+    assert.equal(result[0].command, "valid command");
+    assert.equal(result[0].expectedExit, 0);
+    assert.equal(result[1].command, "another valid");
+    assert.equal(result[1].expectedExit, 2);
+  });
+
+  it("stops at next ## heading", () => {
+    const text = "## Smoke\n- `cmd1`\n## Other section\n- `cmd2`\n";
+    const result = parseSmoke(text);
+    assert.equal(result.length, 1);
+    assert.equal(result[0].command, "cmd1");
+  });
+
+  it("parses * bullets", () => {
+    const text = "## Smoke\n* `ls -la`\n* `echo hello` exit 1\n";
+    const result = parseSmoke(text);
+    assert.equal(result.length, 2);
+    assert.equal(result[0].command, "ls -la");
+    assert.equal(result[0].expectedExit, 0);
+    assert.equal(result[1].command, "echo hello");
+    assert.equal(result[1].expectedExit, 1);
+  });
+
+  it("handles Smoke section not at the start of the brief", () => {
+    const text = "## Brief\nDo stuff.\n\n## Smoke\n- `node test.js` exit 0\n";
+    const result = parseSmoke(text);
+    assert.equal(result.length, 1);
+    assert.equal(result[0].command, "node test.js");
+  });
+
+  it("never throws on any input", () => {
+    assert.doesNotThrow(() => parseSmoke(null));
+    assert.doesNotThrow(() => parseSmoke(undefined));
+    assert.doesNotThrow(() => parseSmoke(42));
+    assert.doesNotThrow(() => parseSmoke({}));
+    assert.doesNotThrow(() => parseSmoke([]));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkSmokeProbe — P4 smoke probe decision logic
+// ---------------------------------------------------------------------------
+
+describe("checkSmokeProbe", () => {
+  it("passes when no smoke entries declared (trivial pass)", () => {
+    const result = checkSmokeProbe([], []);
+    assert.equal(result.passed, true);
+    assert.match(result.detail, /no Smoke declared/);
+  });
+
+  it("passes when all observed exit codes equal expected", () => {
+    const entries = [
+      { command: "node x.js", expectedExit: 0 },
+      { command: "grep -q foo bar", expectedExit: 1 },
+    ];
+    const observed = [
+      { command: "node x.js", observed: 0 },
+      { command: "grep -q foo bar", observed: 1 },
+    ];
+    const result = checkSmokeProbe(entries, observed);
+    assert.equal(result.passed, true);
+  });
+
+  it("fails when observed exit code differs from expected", () => {
+    const entries = [
+      { command: "node x.js", expectedExit: 0 },
+    ];
+    const observed = [
+      { command: "node x.js", observed: 1 },
+    ];
+    const result = checkSmokeProbe(entries, observed);
+    assert.equal(result.passed, false);
+    assert.ok(result.detail.includes("node x.js"));
+    assert.ok(result.detail.includes("expected exit 0"));
+    assert.ok(result.detail.includes("observed exit 1"));
+  });
+
+  it("fails when entry could not be executed (no observed record)", () => {
+    const entries = [
+      { command: "node x.js", expectedExit: 0 },
+    ];
+    const result = checkSmokeProbe(entries, []);
+    assert.equal(result.passed, false);
+    assert.ok(result.detail.includes("not executed"));
+  });
+
+  it("fails when entry timed out", () => {
+    const entries = [
+      { command: "node x.js", expectedExit: 0 },
+    ];
+    const observed = [
+      { command: "node x.js", observed: "timeout" },
+    ];
+    const result = checkSmokeProbe(entries, observed);
+    assert.equal(result.passed, false);
+    assert.ok(result.detail.includes("timeout"));
+  });
+
+  it("probe name is 'P4: smoke'", () => {
+    const result = checkSmokeProbe([], []);
+    assert.equal(result.probe, "P4: smoke");
+  });
+
+  it("detail contains all entry results when multiple entries fail", () => {
+    const entries = [
+      { command: "cmd-a", expectedExit: 0 },
+      { command: "cmd-b", expectedExit: 0 },
+    ];
+    const observed = [
+      { command: "cmd-a", observed: 1 },
+      { command: "cmd-b", observed: "timeout" },
+    ];
+    const result = checkSmokeProbe(entries, observed);
+    assert.equal(result.passed, false);
+    assert.ok(result.detail.includes("cmd-a"));
+    assert.ok(result.detail.includes("cmd-b"));
+    assert.ok(result.detail.includes("expected exit 0"));
+    assert.ok(result.detail.includes("observed exit 1"));
+    assert.ok(result.detail.includes("timeout"));
+  });
+
+  it("passes with multiple entries all matching", () => {
+    const entries = [
+      { command: "cmd-a", expectedExit: 0 },
+      { command: "cmd-b", expectedExit: 1 },
+      { command: "cmd-c", expectedExit: 0 },
+    ];
+    const observed = [
+      { command: "cmd-a", observed: 0 },
+      { command: "cmd-b", observed: 1 },
+      { command: "cmd-c", observed: 0 },
+    ];
+    const result = checkSmokeProbe(entries, observed);
+    assert.equal(result.passed, true);
+    assert.ok(result.detail.includes("3 smoke commands passed"));
+  });
+
+  it("never throws on any input", () => {
+    assert.doesNotThrow(() => checkSmokeProbe(null, null));
+    assert.doesNotThrow(() => checkSmokeProbe(undefined, undefined));
+    assert.doesNotThrow(() => checkSmokeProbe([], null));
+    assert.doesNotThrow(() => checkSmokeProbe(null, []));
+    assert.doesNotThrow(() => checkSmokeProbe("not-array", "not-array"));
   });
 });
 
