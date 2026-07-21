@@ -1290,6 +1290,124 @@ export function checkDeliverablesProbe(deliverables, changedPaths) {
 }
 
 // ---------------------------------------------------------------------------
+// parseSmoke — pure function parsing ## Smoke section from a brief text.
+// Exported for testing.
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse an optional `## Smoke` section from a brief text.
+ *
+ * Section = lines after a `## Smoke` heading up to the next `## ` heading
+ * or EOF.  Each bullet line (`- ` or `* `) declares one smoke entry:
+ * - The command is the first backtick-quoted token (backticks are REQUIRED;
+ *   a bullet without backticks is ignored).
+ * - An optional expected exit code is declared as `exit <N>` anywhere in the
+ *   remainder of the line.  Default expected exit code is 0.
+ *
+ * @param {string|null|undefined} briefText  The full brief text.
+ * @returns {Array<{command: string, expectedExit: number}>}
+ *   Parsed smoke entries; [] when absent/empty.  Never throws.
+ */
+export function parseSmoke(briefText) {
+  if (!briefText || typeof briefText !== "string") return [];
+  const lines = briefText.split("\n");
+  let inSection = false;
+  const entries = [];
+  for (let li = 0; li < lines.length; li++) {
+    const trimmed = lines[li].trim();
+    if (trimmed.startsWith("## ")) {
+      const heading = trimmed.slice(3).trim();
+      if (heading === "Smoke") {
+        inSection = true;
+        continue;
+      }
+      if (inSection) break; // next heading ends the section
+      continue;
+    }
+    if (!inSection) continue;
+
+    // Bullet line?
+    const bulletMatch = trimmed.match(/^[-*]\s+(.*)/);
+    if (!bulletMatch) continue;
+    const content = bulletMatch[1].trim();
+    if (!content) continue;
+
+    // First backtick-quoted token (REQUIRED; lines without are ignored)
+    const backtickMatch = content.match(/`([^`]+)`/);
+    if (!backtickMatch) continue;
+    const command = backtickMatch[1];
+
+    // Optional expected exit code — search only after the closing backtick so
+    // an "exit N" inside the command itself cannot be misread as the annotation.
+    let expectedExit = 0;
+    const afterCommand = content.slice(content.indexOf(backtickMatch[0]) + backtickMatch[0].length);
+    const exitMatch = afterCommand.match(/exit\s+(\d+)/);
+    if (exitMatch) {
+      expectedExit = parseInt(exitMatch[1], 10);
+    }
+
+    if (command) {
+      entries.push({ command, expectedExit });
+    }
+  }
+  return entries;
+}
+
+/**
+ * Pure function: determine the P4 (smoke probe) outcome from declared smoke
+ * entries and their observed exit codes.
+ *
+ * @param {Array<{command: string, expectedExit: number}>} entries
+ *   Declared smoke entries (parseSmoke output).
+ * @param {Array<{command: string, observed: number|string}>} observed
+ *   Observed results.  Use the string "timeout" for timed-out commands,
+ *   or the numeric exit code for executed commands.
+ * @returns {{ probe: string, passed: boolean, detail: string }}
+ */
+export function checkSmokeProbe(entries, observed) {
+  const probe = "P4: smoke";
+  const entriesArr = Array.isArray(entries) ? entries : [];
+  const observedArr = Array.isArray(observed) ? observed : [];
+
+  // No entries declared → trivially pass
+  if (entriesArr.length === 0) {
+    return { probe, passed: true, detail: "no Smoke declared; check skipped" };
+  }
+
+  const details = [];
+  let allPassed = true;
+
+  for (const entry of entriesArr) {
+    const obs = observedArr.find(function (o) { return o.command === entry.command; });
+    if (!obs) {
+      details.push(entry.command + ": not executed");
+      allPassed = false;
+      continue;
+    }
+    if (obs.observed === "timeout") {
+      details.push(entry.command + ": expected exit " + entry.expectedExit + ", observed timeout");
+      allPassed = false;
+      continue;
+    }
+    if (obs.observed !== entry.expectedExit) {
+      details.push(entry.command + ": expected exit " + entry.expectedExit + ", observed exit " + obs.observed);
+      allPassed = false;
+      continue;
+    }
+    details.push(entry.command + ": exit " + obs.observed + " OK");
+  }
+
+  if (allPassed) {
+    const detail = entriesArr.length === 1
+      ? "all smoke command(s) passed"
+      : "all " + entriesArr.length + " smoke commands passed";
+    return { probe, passed: true, detail: detail };
+  }
+
+  return { probe, passed: false, detail: "smoke check failed: " + details.join("; ") };
+}
+
+// ---------------------------------------------------------------------------
 // deriveDisposition — pure function mapping review + probe results to
 // chain disposition.  Exported for testing.
 // ---------------------------------------------------------------------------
@@ -1715,6 +1833,37 @@ async function cmdTask(cwd, { flags, text }) {
       const taskChangedPaths = parseChangedPaths(statusResult?.output ?? "");
       const p3Result = checkDeliverablesProbe(deliverables, taskChangedPaths);
       probeResults.push(p3Result);
+
+      // P4: smoke probe
+      const smokeEntries = parseSmoke(text);
+      if (smokeEntries.length > 0) {
+        const smokeObserved = [];
+        for (const entry of smokeEntries) {
+          let observed;
+          try {
+            const smokeResult = await callTool("sandbox_exec", {
+              container_id: container,
+              commands: [entry.command + "; echo SMOKE_EXIT=$?"],
+              timeout: 300,
+            });
+            const smokeOutput = (smokeResult?.output ?? "") + (smokeResult?.stderr ?? "");
+            // Capture the *last* SMOKE_EXIT match — the wrapper appends it at
+            // end of output, so it's the authoritative marker.  Using matchAll
+            // avoids false positives from earlier instances inside command output.
+            const exitMatches = [...smokeOutput.matchAll(/SMOKE_EXIT=(\d+)/g)];
+            const lastMatch = exitMatches.length > 0 ? exitMatches[exitMatches.length - 1] : null;
+            observed = lastMatch ? parseInt(lastMatch[1], 10) : "unknown";
+          } catch (smokeErr) {
+            observed = String(smokeErr).includes("timeout") ? "timeout" : String(smokeErr);
+          }
+          smokeObserved.push({ command: entry.command, observed: observed });
+        }
+        const p4Result = checkSmokeProbe(smokeEntries, smokeObserved);
+        probeResults.push(p4Result);
+      } else {
+        // No Smoke section → trivially pass, but always record the entry.
+        probeResults.push(checkSmokeProbe([], []));
+      }
 
       job.probeResults = probeResults;
       job.probesGreen = probeResults.every(function (p) { return p.passed; });
@@ -2156,6 +2305,37 @@ async function cmdChain(cwd, { flags, text }) {
       chainStatusObserved = true;
       const p3Result = checkDeliverablesProbe(chainDeliverables, chainChangedPaths);
       probeResults.push(p3Result);
+
+      // P4: smoke probe
+      const chainSmokeEntries = parseSmoke(brief);
+      if (chainSmokeEntries.length > 0) {
+        const chainSmokeObserved = [];
+        for (const entry of chainSmokeEntries) {
+          let observed;
+          try {
+            const smokeResult = await callTool("sandbox_exec", {
+              container_id: container,
+              commands: [entry.command + "; echo SMOKE_EXIT=$?"],
+              timeout: 300,
+            });
+            const smokeOutput = (smokeResult?.output ?? "") + (smokeResult?.stderr ?? "");
+            // Capture the *last* SMOKE_EXIT match — the wrapper appends it at
+            // end of output, so it's the authoritative marker.  Using matchAll
+            // avoids false positives from earlier instances inside command output.
+            const exitMatches = [...smokeOutput.matchAll(/SMOKE_EXIT=(\d+)/g)];
+            const lastMatch = exitMatches.length > 0 ? exitMatches[exitMatches.length - 1] : null;
+            observed = lastMatch ? parseInt(lastMatch[1], 10) : "unknown";
+          } catch (smokeErr) {
+            observed = String(smokeErr).includes("timeout") ? "timeout" : String(smokeErr);
+          }
+          chainSmokeObserved.push({ command: entry.command, observed: observed });
+        }
+        const p4Result = checkSmokeProbe(chainSmokeEntries, chainSmokeObserved);
+        probeResults.push(p4Result);
+      } else {
+        // No Smoke section → trivially pass, but always record the entry.
+        probeResults.push(checkSmokeProbe([], []));
+      }
 
       probesGreen = probeResults.every(function(p) { return p.passed; });
     } catch (probeErr) {

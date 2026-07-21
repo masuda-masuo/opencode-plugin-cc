@@ -95,7 +95,7 @@ Each round r (1..maxRounds, default 3) flows as follows:
 3. **review**: adversarial review with the `kusabi-review` agent. Carries over previous round findings via `--prior`.
 4. **Derive disposition** (§3.5.4): mechanically determine the disposition.
 
-#### 3.5.2 Deterministic probes (P1/P2, non-LLM)
+#### 3.5.2 Deterministic probes (P1–P4, non-LLM)
 
 Direct container inspection via sunaba-rpc (§3.6). Does not involve the LLM:
 
@@ -104,8 +104,9 @@ Direct container inspection via sunaba-rpc (§3.6). Does not involve the LLM:
 | **P1: HEAD clean** | Record baseSha via `git rev-parse HEAD` at chain start. After implement, if HEAD≠base, auto-execute `git reset --mixed <base>` | Auto-fix (empirical: even when the brief explicitly prohibited it, it happened 2 out of 3 times). Record in metadata |
 | **P2: verify gate** | Run `verify_in_container` (no skip flags at all) | If gate_passed=false, skip review, turn results into findings, and rework (consumes a round) |
 | **P3: deliverables** | Parse `## Deliverables` section from the brief; check that at least one declared path appears in the change set (`git status --porcelain`). | Empty change set → review job NOT dispatched, round verdict set to `discard` with `verdictSource: "probe"` (follows the existing discard→escalate path). Deliverables declared but no match → P3 fails but review still runs; `deriveDisposition` handles the rest. No `## Deliverables` section → probe trivially passes. |
+| **P4: smoke** | Parse `## Smoke` section from the brief (syntax: bullet with backtick-quoted command, optional `exit <N>` annotation, default 0). Each declared command is executed inside the container via `sandbox_exec` with the exit code captured via `echo SMOKE_EXIT=$?` wrapper (timeout: 300s). | Any entry whose observed exit code does not match the declared expected exit (or times out / cannot be executed) → P4 fails. No `## Smoke` section → probe trivially passes. |
 
-The same probes (P1–P3) also run for single `task --container <cid>` invocations, storing results on the job record and appending a probe summary to the task output.
+The same probes (P1–P4) also run for single `task --container <cid>` invocations, storing results on the job record and appending a probe summary to the task output.
 
 #### 3.5.3 Review
 
@@ -259,10 +260,10 @@ Reference: issue #36 comment "Decision 5: accept-with-followup (economic cutoff 
 |---|---|---|
 | **B** | Brief-declaration probes: `kind: refactor` / `baseline_collected: N` format. Migration byte identity (P5) | Stage A stable operation |
 | **B** | Implement Decision 4 (strategist stage) and Decision 5 (accept-with-followup) | Stage A |
-| **C** | Patch injection check (P4): mechanically classify patch/monkeypatch.setattr targets via AST. Use only for mock-target determination; exclude system-under-test tests | Stage B |
+| **C** | Patch-target audit (future, unnumbered): mechanically classify patch/monkeypatch.setattr targets via AST. Use only for mock-target determination; exclude system-under-test tests | Stage B |
 | **D** | Connect discard path to #33 (best-of-N) | Stage C, awaiting real-world experience |
 
-The deliverables probe (P3) is now implemented; see §3.5.2. P4 (patch injection) and P5 (migration byte identity) remain as future work.
+The deliverables probe (P3) and the smoke probe (P4) are now implemented; see §3.5.2. P5 (migration byte identity) remains as future work.
 
 Reference: issue #36 comment "Design confirmation before starting → Decision 3: stage split (1 PR = 1 stage)"
 
